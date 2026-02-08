@@ -5,3 +5,4 @@ work
 .settings
 .idea
 nb-configuration.xml
+/bin/
