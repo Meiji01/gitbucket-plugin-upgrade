@@ -82,23 +82,48 @@ public class GitBucketPushTrigger extends Trigger<Job<?, ?>> {
         getDescriptor().queue.execute(new Runnable() {
             @Override
             public void run() {
-                if (job == null) {
+                final Job<?, ?> theJob = job;
+                if (theJob == null) {
                     LOGGER.log(Level.WARNING, "Cannot trigger build - job is null");
                     return;
                 }
-                LOGGER.log(Level.INFO, "{0} triggered.", job.getName());
-                String name = " #" + job.getNextBuildNumber();
+                
+                // Write to log file for the Hook Log view
+                PrintStream logger = null;
+                try {
+                    logger = new PrintStream(getLogFile(), "UTF-8");
+                    logger.println("Started on " + DateFormat.getDateTimeInstance().format(new Date()));
+                    logger.println("GitBucket push webhook received from repository: " + 
+                                 (req.getRepository() != null ? req.getRepository().getUrl() : "unknown"));
+                    if (req.getPusher() != null) {
+                        logger.println("Pushed by: " + req.getPusher().getName());
+                    }
+                    logger.println("Branch: " + req.getRef());
+                    if (req.getLastCommit() != null) {
+                        logger.println("Last commit: " + req.getLastCommit().getId());
+                        logger.println("Commit message: " + req.getLastCommit().getMessage());
+                    }
+                } catch (IOException e) {
+                    LOGGER.log(Level.WARNING, "Failed to write webhook log", e);
+                } finally {
+                    if (logger != null) {
+                        logger.close();
+                    }
+                }
+                
+                LOGGER.log(Level.INFO, "{0} triggered.", theJob.getName());
+                String name = " #" + theJob.getNextBuildNumber();
                 GitBucketPushCause cause = createGitBucketPushCause(req);
                 Action[] actions = createActions(req, cause);
 
                 boolean scheduled = false;
                 try {
-                    int quietPeriod = getQuietPeriod(job);
+                    int quietPeriod = getQuietPeriod(theJob);
                     
                     // 1) try scheduleBuild2(int, Action...) - works for both AbstractProject and WorkflowJob
                     try {
-                        Method m = job.getClass().getMethod("scheduleBuild2", int.class, Action[].class);
-                        Object future = m.invoke(job, quietPeriod, (Object) actions);
+                        Method m = theJob.getClass().getMethod("scheduleBuild2", int.class, Action[].class);
+                        Object future = m.invoke(theJob, quietPeriod, (Object) actions);
                         scheduled = future != null;
                         if (scheduled) {
                             LOGGER.log(Level.FINE, "Scheduled using scheduleBuild2(int, Action[])");
@@ -106,8 +131,8 @@ public class GitBucketPushTrigger extends Trigger<Job<?, ?>> {
                     } catch (NoSuchMethodException e1) {
                         // 2) try scheduleBuild2(int, Cause, Action...)
                         try {
-                            Method m2 = job.getClass().getMethod("scheduleBuild2", int.class, Cause.class, Action[].class);
-                            Object future = m2.invoke(job, quietPeriod, cause, (Object) actions);
+                            Method m2 = theJob.getClass().getMethod("scheduleBuild2", int.class, Cause.class, Action[].class);
+                            Object future = m2.invoke(theJob, quietPeriod, cause, (Object) actions);
                             scheduled = future != null;
                             if (scheduled) {
                                 LOGGER.log(Level.FINE, "Scheduled using scheduleBuild2(int, Cause, Action[])");
@@ -115,33 +140,20 @@ public class GitBucketPushTrigger extends Trigger<Job<?, ?>> {
                         } catch (NoSuchMethodException e2) {
                             // 3) try scheduleBuild(int, Cause, Action...)
                             try {
-                                Method m3 = job.getClass().getMethod("scheduleBuild", int.class, Cause.class, Action[].class);
-                                Object r = m3.invoke(job, quietPeriod, cause, (Object) actions);
+                                Method m3 = theJob.getClass().getMethod("scheduleBuild", int.class, Cause.class, Action[].class);
+                                Object r = m3.invoke(theJob, quietPeriod, cause, (Object) actions);
                                 scheduled = (r instanceof Boolean) && (Boolean) r;
                                 if (scheduled) {
                                     LOGGER.log(Level.FINE, "Scheduled using scheduleBuild(int, Cause, Action[])");
                                 }
                             } catch (NoSuchMethodException e3) {
                                 // 4) fallback: use Jenkins queue schedule with actions
-                                try {
-                                    List<Action> actionList = new ArrayList<Action>();
-                                    actionList.addAll(java.util.Arrays.asList(actions));
-                                    Queue.Item item = Jenkins.getInstance().getQueue().schedule2((Queue.Task) job, quietPeriod, actionList).getItem();
-                                    scheduled = item != null;
-                                    if (scheduled) {
-                                        LOGGER.log(Level.FINE, "Scheduled using Queue.schedule2");
-                                    }
-                                } catch (Exception e4) {
-                                    // Last resort: simple schedule
-                                    try {
-                                        Queue.Item item = Jenkins.getInstance().getQueue().schedule((Queue.Task) job, quietPeriod);
-                                        scheduled = item != null;
-                                        if (scheduled) {
-                                            LOGGER.log(Level.WARNING, "Scheduled using basic Queue.schedule (actions may not be attached)");
-                                        }
-                                    } catch (Exception e5) {
-                                        scheduled = false;
-                                    }
+                                List<Action> actionList = new ArrayList<Action>();
+                                actionList.addAll(java.util.Arrays.asList(actions));
+                                Queue.Item item = Jenkins.getInstance().getQueue().schedule2((Queue.Task) theJob, quietPeriod, actionList).getItem();
+                                scheduled = item != null;
+                                if (scheduled) {
+                                    LOGGER.log(Level.FINE, "Scheduled using Queue.schedule2");
                                 }
                             }
                         }
@@ -153,9 +165,9 @@ public class GitBucketPushTrigger extends Trigger<Job<?, ?>> {
                 }
 
                 if (scheduled) {
-                    LOGGER.log(Level.INFO, "Triggered {0} for {1}", new Object[]{name, job.getName()});
+                    LOGGER.log(Level.INFO, "Triggered {0} for {1}", new Object[]{name, theJob.getName()});
                 } else {
-                    LOGGER.log(Level.WARNING, "Job {0} could not be scheduled (may already be in queue).", job.getName());
+                    LOGGER.log(Level.WARNING, "Job {0} could not be scheduled (may already be in queue).", theJob.getName());
                 }
             }
 
