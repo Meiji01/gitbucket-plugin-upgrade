@@ -32,7 +32,7 @@ import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.kohsuke.stapler.StaplerRequest;
 
-import static org.mockito.Matchers.anyObject;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -75,7 +75,7 @@ public class GitBucketWebHookCompatibleTest {
         GitBucketWebHook hook = new GitBucketWebHook();
         hook.doIndex(req);
 
-        verify(trigger, times(1)).onPost((GitBucketPushRequest) anyObject());
+        verify(trigger, times(1)).onPost(any(GitBucketPushRequest.class));
     }
 
     @Test
@@ -103,7 +103,7 @@ public class GitBucketWebHookCompatibleTest {
         GitBucketWebHook hook = new GitBucketWebHook();
         hook.doIndex(req);
 
-        verify(trigger, never()).onPost((GitBucketPushRequest) anyObject());
+        verify(trigger, never()).onPost(any(GitBucketPushRequest.class));
     }
 
     @Test
@@ -132,7 +132,7 @@ public class GitBucketWebHookCompatibleTest {
         hook.doIndex(req);
 
         // make sure that onPost() never  called.
-        verify(trigger, never()).onPost((GitBucketPushRequest) anyObject());
+        verify(trigger, never()).onPost(any(GitBucketPushRequest.class));
     }
 
     /**
